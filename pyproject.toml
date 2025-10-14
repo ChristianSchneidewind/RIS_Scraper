@@ -1,0 +1,14 @@
+[project]
+name = "ris-abgb"
+version = "0.1.0"
+description = "ABGB Paragraphen via RIS: SOAP-Suche + HTML-Scraping → JSONL"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31",
+  "lxml>=5.1",
+  "beautifulsoup4>=4.12",
+]
+
+[project.scripts]
+ris-abgb = "ris_abgb.cli:main"

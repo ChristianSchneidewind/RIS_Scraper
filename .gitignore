@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Virtuelle Umgebung
+.venv/
+env/
+venv/
+
+# RIS Debug- und Zwischendateien
+last_*.xml
+*.jsonl
+*.tmp
+*.bak
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS / Sonstiges
+.DS_Store
+Thumbs.db
