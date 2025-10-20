@@ -3,43 +3,40 @@ import requests
 from bs4 import BeautifulSoup
 from .config import USER_AGENT
 
+_RX_NOR = re.compile(r"\b(NOR\d{5,})\b", re.IGNORECASE)
+
 def fetch_paragraph_text_via_html(url: str) -> dict:
     """
-    Lädt die Bundesnormen-HTML und extrahiert heading + text.
+    Lädt die Bundesnormen-HTML und extrahiert Überschrift, Text und NOR.
     """
     if not url:
-        return {"heading": "", "text": ""}
+        return {"heading": "", "text": "", "nor": ""}
 
     r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=120)
     r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
+    html = r.text
+    soup = BeautifulSoup(html, "html.parser")
+    m = _RX_NOR.search(html)
+    nor = m.group(1) if m else ""
 
     candidates = [
-        ("div", {"id": "content"}),
-        ("div", {"class": "content"}),
-        ("div", {"class": "norm"}),
-        ("article", {}),
-        ("main", {}),
+        soup.find("div", {"id": "content"}),
+        soup.find("div", {"class": "content"}),
+        soup.find("div", {"class": "norm"}),
+        soup.find("body"),
     ]
-    main = None
-    for name, attrs in candidates:
-        main = soup.find(name, attrs=attrs)
-        if main:
-            break
-    if not main:
-        full = soup.get_text("\n", strip=True)
-        return {"heading": "", "text": full}
 
-    heading_el = main.find(["h1", "h2"]) or soup.find(["h1", "h2"])
-    heading = heading_el.get_text(" ", strip=True) if heading_el else ""
+    for cand in candidates:
+        if cand:
+            heading = (cand.find("h1") or cand.find("h2") or cand.find("h3"))
+            heading = heading.get_text(strip=True) if heading else ""
+            text = cand.get_text("\n", strip=True)
+            if text:
+                return {"heading": heading, "text": text, "nor": nor}
 
-    for sel in ["nav", "header", "footer", ".breadcrumb", ".toolbar", ".meta", ".buttons"]:
-        for junk in main.select(sel):
-            junk.decompose()
+    full = soup.get_text("\n", strip=True)
+    return {"heading": "", "text": full, "nor": nor}
 
-    text = main.get_text("\n", strip=True)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return {"heading": heading, "text": text}
 
 def extract_para_id(s: str) -> str:
     m = re.search(r"(§+\s*\d+[a-zA-Z]*)", s or "")
