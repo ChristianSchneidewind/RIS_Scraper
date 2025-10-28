@@ -1,32 +1,56 @@
 import json
 from pathlib import Path
+import shutil
 
 def merge_laws(base_path: str, enriched_path: str, out_path: str = None):
-    base = json.loads(Path(base_path).read_text(encoding="utf-8"))
-    enriched = json.loads(Path(enriched_path).read_text(encoding="utf-8"))
+    base_file = Path(base_path)
+    enriched_file = Path(enriched_path)
+    out_file = Path(out_path or base_path)
 
-    enriched_by_nr = {e["gesetzesnummer"]: e for e in enriched}
+    if not base_file.exists():
+        raise FileNotFoundError(f"❌ Basisdatei nicht gefunden: {base_file}")
+    if not enriched_file.exists():
+        raise FileNotFoundError(f"❌ Enriched-Datei nicht gefunden: {enriched_file}")
 
-    merged = []
-    updated, unchanged = 0, 0
+    print(f"[🔍] Lade Basisdaten aus {base_file}")
+    base_data = json.loads(base_file.read_text(encoding="utf-8"))
 
-    for law in base:
-        gnr = law["gesetzesnummer"]
-        if gnr in enriched_by_nr:
-            enriched_law = enriched_by_nr[gnr]
-            if "fallback_end" in enriched_law:
-                law["fallback_end"] = enriched_law["fallback_end"]
-            if "unit_type" in enriched_law:
-                law["unit_type"] = enriched_law["unit_type"]
-            updated += 1
+    print(f"[🔍] Lade Enriched-Daten aus {enriched_file}")
+    enriched_data = json.loads(enriched_file.read_text(encoding="utf-8"))
+
+    enriched_map = {item["gesetzesnummer"]: item for item in enriched_data}
+
+    backup_path = base_file.with_suffix(".bak")
+    print(f"[💾] Erstelle Backup: {backup_path}")
+    shutil.copy2(base_file, backup_path)
+
+    updated = 0
+    unchanged = 0
+
+    for entry in base_data:
+        gnr = entry.get("gesetzesnummer")
+        if not gnr:
+            continue
+        enriched = enriched_map.get(gnr)
+        if enriched:
+            changed = False
+            if "fallback_end" in enriched and enriched["fallback_end"]:
+                entry["fallback_end"] = enriched["fallback_end"]
+                changed = True
+            if "unit_type" in enriched and enriched["unit_type"]:
+                entry["unit_type"] = enriched["unit_type"]
+                changed = True
+            if changed:
+                updated += 1
+            else:
+                unchanged += 1
         else:
             unchanged += 1
-        merged.append(law)
 
-    Path(out_path or base_path).write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    print(f"✅ {updated} Gesetze aktualisiert, {unchanged} unverändert.")
-    print(f"Gespeichert nach: {out_path or base_path}")
+    out_file.write_text(json.dumps(base_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[✅] {updated} Gesetze aktualisiert, {unchanged} unverändert.")
+    print(f"[📘] Gespeichert nach: {out_file}")
+    print(f"[🧾] Backup liegt unter: {backup_path}")
 
 if __name__ == "__main__":
     merge_laws(
