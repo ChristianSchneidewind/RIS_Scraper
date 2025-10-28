@@ -139,7 +139,7 @@ Die Bibliothek cached nichts – für große Läufe ggf. delay anpassen
 
 🧑‍💻 Autor & Lizenz
 
-Autor: dein Name oder Alias
+Autor: Christian Schneidewind
 Lizenz: MIT
 Datenquelle: RIS – https://www.ris.bka.gv.at/
 
