@@ -5,11 +5,13 @@ from .html_parser import fetch_paragraph_text_via_html, extract_para_id
 
 license_note = "Datenquelle: RIS – https://www.ris.bka.gv.at/, Lizenz: CC BY 4.0"
 
+
 def write_jsonl_from_docrefs(
     docrefs,
     out_path: str,
     delay: float = 1.0,
     gesetzesnummer: str = "10001622",
+    law_name: str = "ABGB",
 ) -> int:
     """
     Holt HTML-Seiten zu den Docrefs und schreibt sie als JSONL-Datei.
@@ -41,7 +43,7 @@ def write_jsonl_from_docrefs(
             retrieved_at = datetime.utcnow().isoformat() + "Z"
 
             rec = {
-                "law": "ABGB",
+                "law": law_name,
                 "application": "Bundesnormen(HTML)",
                 "gesetzesnummer": gesetzesnummer,
                 "source": "RIS HTML",
@@ -54,7 +56,7 @@ def write_jsonl_from_docrefs(
                 "text": text,
             }
 
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            f.write(json.dumps(rec, ensure_ascii=False, indent=4) + "\n")
             rows += 1
             time.sleep(delay)
 

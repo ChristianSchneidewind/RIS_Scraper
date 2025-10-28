@@ -13,8 +13,24 @@ venv/
 # RIS Debug- und Zwischendateien
 last_*.xml
 *.jsonl
+*.json
 *.tmp
 *.bak
+
+# Lokale Cache-Verzeichnisse
+cache/
+cache_toc/
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Test and coverage
+.coverage
+htmlcov/
+.tox/
+pytest_cache/
 
 # IDE / Editor
 .vscode/
@@ -22,13 +38,14 @@ last_*.xml
 *.swp
 *.swo
 
+# Editor backups
+*~
+*.orig
+
 # OS / Sonstiges
 .DS_Store
 Thumbs.db
 
-!ris_law/data/laws.json
-
-cache/
-cache_toc
-
-ris_law.egg-info/
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
