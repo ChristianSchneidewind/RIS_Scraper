@@ -18,6 +18,9 @@ last_*.xml
 *.bak
 
 !laws.json
+
+# Voruebergehende whitelistung
+!laws_enriched.json
 # Lokale Cache-Verzeichnisse
 cache/
 cache_toc/
