@@ -17,6 +17,7 @@ last_*.xml
 *.tmp
 *.bak
 
+!laws.json
 # Lokale Cache-Verzeichnisse
 cache/
 cache_toc/
