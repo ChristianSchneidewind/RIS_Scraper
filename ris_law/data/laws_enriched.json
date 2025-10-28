@@ -21,7 +21,7 @@
     "gesetzesnummer": "10000795",
     "fallback_end": 80,
     "unit_type": "paragraf",
-    "fallback_source": "toc_lowmem"
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "ABGB",
@@ -41,9 +41,9 @@
     "kurz": "ZPO",
     "titel": "Zivilprozessordnung",
     "gesetzesnummer": "10001699",
-    "fallback_end": 33,
-    "unit_type": "artikel",
-    "fallback_source": "probe:artikel"
+    "fallback_end": 637,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "JN",
@@ -57,9 +57,9 @@
     "kurz": "EO",
     "titel": "Exekutionsordnung",
     "gesetzesnummer": "10001700",
-    "fallback_end": 3,
-    "unit_type": "artikel",
-    "fallback_source": "probe:artikel"
+    "fallback_end": 505,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "AußStrG",
@@ -99,7 +99,7 @@
     "gesetzesnummer": "10002665",
     "fallback_end": 46,
     "unit_type": "paragraf",
-    "fallback_source": "toc_lowmem"
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "GmbHG",
@@ -115,7 +115,7 @@
     "gesetzesnummer": "10002070",
     "fallback_end": 273,
     "unit_type": "paragraf",
-    "fallback_source": "toc_lowmem"
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "StGB",
@@ -147,15 +147,15 @@
     "gesetzesnummer": "10005792",
     "fallback_end": 98,
     "unit_type": "paragraf",
-    "fallback_source": "toc_lowmem"
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "StVollzG",
     "titel": "Strafvollzugsgesetz",
     "gesetzesnummer": "10002135",
-    "fallback_end": 33,
-    "unit_type": "artikel",
-    "fallback_source": "probe:artikel"
+    "fallback_end": 182,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "BAO",
@@ -168,26 +168,23 @@
   {
     "kurz": "DSG",
     "titel": "Datenschutzgesetz",
-    "gesetzesnummer": "10001597",
-    "fallback_end": 70,
-    "unit_type": "artikel",
-    "fallback_source": "toc_lowmem"
+    "gesetzesnummer": "10001597"
   },
   {
     "kurz": "TKG 2021",
     "titel": "Telekommunikationsgesetz 2021",
     "gesetzesnummer": "20011678",
     "fallback_end": 217,
-    "unit_type": "artikel",
-    "fallback_source": "toc_lowmem"
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "ECG",
     "titel": "E-Commerce-Gesetz",
     "gesetzesnummer": "20001703",
     "fallback_end": 31,
-    "unit_type": "artikel",
-    "fallback_source": "probe:artikel"
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "AVG",
@@ -210,24 +207,24 @@
     "titel": "Asylgesetz 2005",
     "gesetzesnummer": "20004240",
     "fallback_end": 75,
-    "unit_type": "artikel",
-    "fallback_source": "toc_lowmem"
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "FPG 2005",
     "titel": "Fremdenpolizeigesetz 2005",
     "gesetzesnummer": "20004241",
     "fallback_end": 127,
-    "unit_type": "artikel",
-    "fallback_source": "toc_lowmem"
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "NAG",
     "titel": "Niederlassungs- und Aufenthaltsgesetz",
     "gesetzesnummer": "20004242",
     "fallback_end": 83,
-    "unit_type": "artikel",
-    "fallback_source": "toc_lowmem"
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "AuslBG",
@@ -258,8 +255,8 @@
     "titel": "Arbeitszeitgesetz",
     "gesetzesnummer": "10008238",
     "fallback_end": 34,
-    "unit_type": "artikel",
-    "fallback_source": "toc_lowmem"
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "UrlG",
@@ -275,12 +272,15 @@
     "gesetzesnummer": "10008464",
     "fallback_end": 40,
     "unit_type": "paragraf",
-    "fallback_source": "toc_lowmem"
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "AVRAG",
     "titel": "Arbeitsvertragsrechts-Anpassungsgesetz",
-    "gesetzesnummer": "10008872"
+    "gesetzesnummer": "10008872",
+    "fallback_end": 19,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
   },
   {
     "kurz": "GewO 1994",
