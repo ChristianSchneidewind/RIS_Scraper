@@ -25,3 +25,10 @@ last_*.xml
 # OS / Sonstiges
 .DS_Store
 Thumbs.db
+
+!ris_law/data/laws.json
+
+cache/
+cache_toc
+
+ris_law.egg-info/

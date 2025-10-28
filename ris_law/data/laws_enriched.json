@@ -1,0 +1,293 @@
+[
+  {
+    "kurz": "B-VG",
+    "titel": "Bundes-Verfassungsgesetz",
+    "gesetzesnummer": "10000138",
+    "fallback_end": 152,
+    "unit_type": "artikel",
+    "fallback_source": "probe:artikel"
+  },
+  {
+    "kurz": "VfGG",
+    "titel": "Verfassungsgerichtshofgesetz 1953",
+    "gesetzesnummer": "10000245",
+    "fallback_end": 96,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "VwGG",
+    "titel": "Verwaltungsgerichtshofgesetz 1985",
+    "gesetzesnummer": "10000795",
+    "fallback_end": 80,
+    "unit_type": "paragraf",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "ABGB",
+    "titel": "Allgemeines bürgerliches Gesetzbuch",
+    "gesetzesnummer": "10001622",
+    "fallback_end": 1502
+  },
+  {
+    "kurz": "UGB",
+    "titel": "Unternehmensgesetzbuch",
+    "gesetzesnummer": "10001702",
+    "fallback_end": 58,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "ZPO",
+    "titel": "Zivilprozessordnung",
+    "gesetzesnummer": "10001699",
+    "fallback_end": 33,
+    "unit_type": "artikel",
+    "fallback_source": "probe:artikel"
+  },
+  {
+    "kurz": "JN",
+    "titel": "Jurisdiktionsnorm",
+    "gesetzesnummer": "10001697",
+    "fallback_end": 123,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "EO",
+    "titel": "Exekutionsordnung",
+    "gesetzesnummer": "10001700",
+    "fallback_end": 3,
+    "unit_type": "artikel",
+    "fallback_source": "probe:artikel"
+  },
+  {
+    "kurz": "AußStrG",
+    "titel": "Außerstreitgesetz",
+    "gesetzesnummer": "20003047",
+    "fallback_end": 208,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "MRG",
+    "titel": "Mietrechtsgesetz",
+    "gesetzesnummer": "10002531",
+    "fallback_end": 59,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "WEG 2002",
+    "titel": "Wohnungseigentumsgesetz 2002",
+    "gesetzesnummer": "20001921",
+    "fallback_end": 59,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "KSchG",
+    "titel": "Konsumentenschutzgesetz",
+    "gesetzesnummer": "10002462",
+    "fallback_end": 42,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "UWG",
+    "titel": "Bundesgesetz gegen den unlauteren Wettbewerb",
+    "gesetzesnummer": "10002665",
+    "fallback_end": 46,
+    "unit_type": "paragraf",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "GmbHG",
+    "titel": "GmbH-Gesetz",
+    "gesetzesnummer": "10001720",
+    "fallback_end": 127,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "AktG",
+    "titel": "Aktiengesetz",
+    "gesetzesnummer": "10002070",
+    "fallback_end": 273,
+    "unit_type": "paragraf",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "StGB",
+    "titel": "Strafgesetzbuch",
+    "gesetzesnummer": "10002296",
+    "fallback_end": 321
+  },
+  {
+    "kurz": "StPO",
+    "titel": "Strafprozessordnung 1975",
+    "gesetzesnummer": "10002326",
+    "fallback_end": 600
+  },
+  {
+    "kurz": "StVO 1960",
+    "titel": "Straßenverkehrsordnung 1960",
+    "gesetzesnummer": "10011336",
+    "fallback_end": 134
+  },
+  {
+    "kurz": "KFG 1967",
+    "titel": "Kraftfahrgesetz 1967",
+    "gesetzesnummer": "10011384",
+    "fallback_end": 134
+  },
+  {
+    "kurz": "SPG",
+    "titel": "Sicherheitspolizeigesetz",
+    "gesetzesnummer": "10005792",
+    "fallback_end": 98,
+    "unit_type": "paragraf",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "StVollzG",
+    "titel": "Strafvollzugsgesetz",
+    "gesetzesnummer": "10002135",
+    "fallback_end": 33,
+    "unit_type": "artikel",
+    "fallback_source": "probe:artikel"
+  },
+  {
+    "kurz": "BAO",
+    "titel": "Bundesabgabenordnung",
+    "gesetzesnummer": "10003940",
+    "fallback_end": 324,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "DSG",
+    "titel": "Datenschutzgesetz",
+    "gesetzesnummer": "10001597",
+    "fallback_end": 70,
+    "unit_type": "artikel",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "TKG 2021",
+    "titel": "Telekommunikationsgesetz 2021",
+    "gesetzesnummer": "20011678",
+    "fallback_end": 217,
+    "unit_type": "artikel",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "ECG",
+    "titel": "E-Commerce-Gesetz",
+    "gesetzesnummer": "20001703",
+    "fallback_end": 31,
+    "unit_type": "artikel",
+    "fallback_source": "probe:artikel"
+  },
+  {
+    "kurz": "AVG",
+    "titel": "Allgemeines Verwaltungsverfahrensgesetz 1991",
+    "gesetzesnummer": "10005768",
+    "fallback_end": 82,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "VStG",
+    "titel": "Verwaltungsstrafgesetz 1991",
+    "gesetzesnummer": "10005770",
+    "fallback_end": 70,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "AsylG 2005",
+    "titel": "Asylgesetz 2005",
+    "gesetzesnummer": "20004240",
+    "fallback_end": 75,
+    "unit_type": "artikel",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "FPG 2005",
+    "titel": "Fremdenpolizeigesetz 2005",
+    "gesetzesnummer": "20004241",
+    "fallback_end": 127,
+    "unit_type": "artikel",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "NAG",
+    "titel": "Niederlassungs- und Aufenthaltsgesetz",
+    "gesetzesnummer": "20004242",
+    "fallback_end": 83,
+    "unit_type": "artikel",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "AuslBG",
+    "titel": "Ausländerbeschäftigungsgesetz",
+    "gesetzesnummer": "10008365",
+    "fallback_end": 35,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "ArbVG",
+    "titel": "Arbeitsverfassungsgesetz",
+    "gesetzesnummer": "10008329",
+    "fallback_end": 272,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "AngG",
+    "titel": "Angestelltengesetz",
+    "gesetzesnummer": "10008069",
+    "fallback_end": 11,
+    "unit_type": "artikel",
+    "fallback_source": "probe:artikel"
+  },
+  {
+    "kurz": "AZG",
+    "titel": "Arbeitszeitgesetz",
+    "gesetzesnummer": "10008238",
+    "fallback_end": 34,
+    "unit_type": "artikel",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "UrlG",
+    "titel": "Urlaubsgesetz",
+    "gesetzesnummer": "10008376",
+    "fallback_end": 19,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  },
+  {
+    "kurz": "MSchG",
+    "titel": "Mutterschutzgesetz 1979",
+    "gesetzesnummer": "10008464",
+    "fallback_end": 40,
+    "unit_type": "paragraf",
+    "fallback_source": "toc_lowmem"
+  },
+  {
+    "kurz": "AVRAG",
+    "titel": "Arbeitsvertragsrechts-Anpassungsgesetz",
+    "gesetzesnummer": "10008872"
+  },
+  {
+    "kurz": "GewO 1994",
+    "titel": "Gewerbeordnung 1994",
+    "gesetzesnummer": "10007517",
+    "fallback_end": 162,
+    "unit_type": "paragraf",
+    "fallback_source": "probe:paragraf"
+  }
+]
