@@ -24,7 +24,8 @@
     "kurz": "ABGB",
     "titel": "Allgemeines bürgerliches Gesetzbuch",
     "gesetzesnummer": "10001622",
-    "fallback_end": 1502
+    "fallback_end": 1502,
+    "unit_type": "paragraf"
   },
   {
     "kurz": "UGB",
@@ -113,7 +114,8 @@
     "kurz": "StPO",
     "titel": "Strafprozessordnung 1975",
     "gesetzesnummer": "10002326",
-    "fallback_end": 600
+    "fallback_end": 600,
+    "unit_type": "paragraf"
   },
   {
     "kurz": "StVO 1960",
