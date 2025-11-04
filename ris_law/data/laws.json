@@ -31,8 +31,9 @@
     "kurz": "UGB",
     "titel": "Unternehmensgesetzbuch",
     "gesetzesnummer": "10001702",
-    "fallback_end": 58,
+    "fallback_end": 909,
     "unit_type": "paragraf"
+    
   },
   {
     "kurz": "ZPO",
@@ -108,7 +109,8 @@
     "kurz": "StGB",
     "titel": "Strafgesetzbuch",
     "gesetzesnummer": "10002296",
-    "fallback_end": 321
+    "fallback_end": 321,
+    "unit_type": "paragraf"
   },
   {
     "kurz": "StPO",
@@ -121,13 +123,15 @@
     "kurz": "StVO 1960",
     "titel": "Straßenverkehrsordnung 1960",
     "gesetzesnummer": "10011336",
-    "fallback_end": 134
+    "fallback_end": 134,
+    "unit_type": "paragraf"
   },
   {
     "kurz": "KFG 1967",
     "titel": "Kraftfahrgesetz 1967",
     "gesetzesnummer": "10011384",
-    "fallback_end": 134
+    "fallback_end": 134,
+    "unit_type": "paragraf"
   },
   {
     "kurz": "SPG",
