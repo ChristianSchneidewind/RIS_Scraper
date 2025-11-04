@@ -9,45 +9,50 @@ import re
 import time
 import urllib.parse as _url
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse, parse_qs, urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
 # ---------- Einstellungen ----------
 DEFAULT_HEADERS = {
-    "User-Agent": "RIS-Law-FallbackEnricher/LowMem+Robust (+https://github.com/yourrepo)"
+    "User-Agent": "RIS-Law-FallbackEnricher/SmartProbe+Context v3 (+https://github.com/yourrepo)"
 }
 REQUEST_TIMEOUT = 30
 TOC_BASE = "https://www.ris.bka.gv.at/NormDokument.wxe"
 
 PROBE_ON_EMPTY_TOC = True
-PROBE_MAX = 800
-PROBE_CONSEC_MISS = 40
-PROBE_DELAY = 0.3  # langsamer, aber stabiler
-
-CACHE_DIR = Path("cache_toc")  # kleiner Cache nur für TOCs
+PROBE_MIN_TOC_SIZE = 100
+CACHE_DIR = Path("cache_toc")
 CACHE_MAX_AGE_DAYS = 7
-SLEEP_BETWEEN_LAWS = 0.8       # kleine Pause zwischen Gesetzen
+SLEEP_BETWEEN_LAWS = 0.8
 
-_RX_NUM = re.compile(r"§\s*(\d+)", re.IGNORECASE)
-_RE_PARA_SINGLE = re.compile(r"§\s*(\d+[a-zA-Z]?)", re.IGNORECASE)
-_RE_ART_SINGLE  = re.compile(r"(?:Art\.|Artikel)\s*(\d+[a-zA-Z]?)", re.IGNORECASE)
-_RE_HREF_ART    = re.compile(r"Artikel\s*=\s*(\d+)", re.IGNORECASE)
-_RE_HREF_PAR    = re.compile(r"Paragraf\s*=\s*(\d+)", re.IGNORECASE)
+PROBE_MAX = 4000
+PROBE_RETRIES = 2
+PROBE_BACKOFF = 1.6
+MISSING_STREAK_ABORT = 100
 
+# Optionaler Notanker (sollte mit v3 selten nötig sein)
+KNOWN_MAX: Dict[str, int] = {
+    "10001702": 909,  # UGB – nur falls SmartProbe trotz v3 nicht greift
+}
+
+# Regexe
+_RE_HREF_ART = re.compile(r"(?:[?&])Artikel\s*=\s*(\d+)", re.IGNORECASE)
+_RE_HREF_PAR = re.compile(r"(?:[?&])Paragraf\s*=\s*(\d+)", re.IGNORECASE)
+_RE_UNIT_LOOSE = re.compile(r"\b(§|Art\.?)\s*(\d+[a-zA-Z]?)\b", re.IGNORECASE)
+_RE_RANGE = re.compile(r"§{1,2}\s*(\d+)\s*(?:bis|-|–)\s*(\d+)", re.IGNORECASE)
 
 # ---------- Logging ----------
 def log(msg: str):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
-
-# ---------- HTTP robust + Cache (nur TOC) ----------
+# ---------- HTTP + Cache ----------
 class NotFound404(Exception):
     pass
 
 def http_get(url: str, timeout: int = REQUEST_TIMEOUT, tries: int = 3, backoff: float = 1.7) -> str:
-    """Robuster GET mit Retry/Backoff. Wirft NotFound404 bei 404, sonst Requests-Fehler nach letztem Versuch."""
     last_exc = None
     for i in range(tries):
         try:
@@ -60,28 +65,25 @@ def http_get(url: str, timeout: int = REQUEST_TIMEOUT, tries: int = 3, backoff: 
             raise
         except requests.RequestException as e:
             last_exc = e
-            # kurzer Backoff, dann nochmal
             time.sleep((backoff ** i) * 0.6)
-    # nach tries aufgegeben
     if last_exc:
         raise last_exc
     raise RuntimeError("Unbekannter HTTP-Fehler")
 
 def cached_toc_fetch(url: str) -> str:
-    """Nur TOC-URLs cachen; 404 wird durchgereicht."""
     os.makedirs(CACHE_DIR, exist_ok=True)
     key = hashlib.sha1(url.encode()).hexdigest()
-    cache_file = CACHE_DIR / f"{key}.html"
-
-    if cache_file.exists() and (time.time() - cache_file.stat().st_mtime < CACHE_MAX_AGE_DAYS * 86400):
-        return cache_file.read_text(encoding="utf-8")
-
+    p = CACHE_DIR / f"{key}.html"
+    if p.exists() and (time.time() - p.stat().st_mtime < CACHE_MAX_AGE_DAYS * 86400):
+        return p.read_text(encoding="utf-8")
     html = http_get(url)
-    cache_file.write_text(html, encoding="utf-8")
+    p.write_text(html, encoding="utf-8")
     return html
 
+# ---------- Helpers ----------
+def _param_for_type(unit_type: str) -> str:
+    return "Artikel" if str(unit_type).lower().startswith("art") else "Paragraf"
 
-# ---------- Parser ----------
 def _norm_para(s: str) -> str:
     s = s.strip()
     return "§ " + re.sub(r"^§?\s*(\d+[a-zA-Z]?)$", r"\1", s)
@@ -90,131 +92,283 @@ def _norm_art(s: str) -> str:
     s = s.strip()
     return "Art. " + re.sub(r"^(?:Art\.?|Artikel)?\s*(\d+[a-zA-Z]?)$", r"\1", s)
 
-def fetch_toc_html(gesetzesnummer: str, param: str) -> str:
-    params = {
-        "Abfrage": "Bundesnormen",
-        "Gesetzesnummer": gesetzesnummer,
-        param: "0",
-        "Uebergangsrecht": "",
-        "Anlage": "",
-    }
-    url = TOC_BASE + "?" + _url.urlencode(params)
-    return cached_toc_fetch(url)
+def _toc_url0(gnr: str, unit_type: str) -> str:
+    param = _param_for_type(unit_type)
+    params = {"Abfrage": "Bundesnormen", "Gesetzesnummer": gnr, param: "0", "Uebergangsrecht": "", "Anlage": ""}
+    return TOC_BASE + "?" + _url.urlencode(params)
 
-# --- ERSETZEN: parse_toc() komplett ---
+def _root_toc_urls(gnr: str) -> list[str]:
+    base = TOC_BASE + "?" + _url.urlencode({"Abfrage": "Bundesnormen", "Gesetzesnummer": gnr})
+    return [
+        base + "&Paragraf=0&Uebergangsrecht=&Anlage=",
+        base + "&Artikel=0&Uebergangsrecht=&Anlage=",
+        base + "&Index=",
+        base + "&Gliederung=",
+    ]
 
-def parse_toc(html: str) -> Tuple[List[str], str]:
-    """
-    TOC parsen:
-    - Units NUR aus Links (verlässlich) + optional Text-Einzel (nur wenn Links leer sind)
-    - unit_type ausschließlich nach Link-Counts bestimmen
-    - § 0 / Art. 0 werden ignoriert
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    units_link_par: List[str] = []
-    units_link_art: List[str] = []
-    units_text_par: List[str] = []
-    units_text_art: List[str] = []
-
-    # 1) Links (zuverlässig) – 0 ignorieren
+# ---------- TOC-Parsing (Heuristik) ----------
+def _parse_units_from_toc_html(html: str) -> list[str]:
+    soup = BeautifulSoup(html, "lxml")
+    units = []
     for a in soup.find_all("a", href=True):
-        href = a["href"]
-        mp = _RE_HREF_PAR.search(href)
-        if mp:
-            num = mp.group(1).strip()
+        href = a["href"] or ""
+        m = _RE_HREF_PAR.search(href)
+        if m and m.group(1) != "0":
+            units.append(_norm_para(m.group(1))); continue
+        m = _RE_HREF_ART.search(href)
+        if m and m.group(1) != "0":
+            units.append(_norm_art(m.group(1))); continue
+        txt = (a.get_text() or "").strip()
+        for mm in _RE_UNIT_LOOSE.finditer(txt):
+            kind, num = mm.group(1), mm.group(2)
             if num != "0":
-                units_link_par.append(_norm_para(num))
-            continue
-        ma = _RE_HREF_ART.search(href)
-        if ma:
-            num = ma.group(1).strip()
-            if num != "0":
-                units_link_art.append(_norm_art(num))
-            continue
-
-    # 2) Text (vorsichtig) – 0 ignorieren
-    text_all = soup.get_text("\n", strip=True)
-    for m in _RE_PARA_SINGLE.finditer(text_all):
-        num = m.group(1).strip()
-        if num != "0":
-            units_text_par.append(_norm_para(num))
-    for m in _RE_ART_SINGLE.finditer(text_all):
-        num = m.group(1).strip()
-        if num != "0":
-            units_text_art.append(_norm_art(num))
-
-    # 3) unit_type NUR nach Link-Counts
-    if len(units_link_art) > len(units_link_par):
-        unit_type = "artikel"
-    elif len(units_link_par) > 0:
-        unit_type = "paragraf"
-    elif len(units_link_art) > 0:
-        unit_type = "artikel"
-    else:
-        unit_type = "artikel" if len(units_text_art) > len(units_text_par) else "paragraf"
-
-    # 4) Finale Units: Links bevorzugt, Text nur wenn Links leer und genug Treffer
-    if unit_type == "paragraf":
-        units = sorted(set(units_link_par)) or (sorted(set(units_text_par)) if len(units_text_par) > 10 else [])
-    else:
-        units = sorted(set(units_link_art)) or (sorted(set(units_text_art)) if len(units_text_art) > 10 else [])
-
+                units.append(_norm_art(num) if kind.lower().startswith("art") else _norm_para(num))
+    text_all = soup.get_text(" ", strip=True).replace("\xa0", " ")
+    for m in _RE_RANGE.finditer(text_all):
+        lo, hi = int(m.group(1)), int(m.group(2))
+        if 0 < lo <= hi and (hi - lo) < 5000:
+            for n in range(lo, hi + 1):
+                units.append(_norm_para(str(n)))
     soup.decompose()
-    return units, unit_type
+    seen, out = set(), []
+    for u in units:
+        if u not in seen:
+            seen.add(u); out.append(u)
+    def _key(u: str):
+        s = u.replace("Art.", "").replace("§", "").strip()
+        m = re.search(r"(\d+)([a-zA-Z]*)$", s)
+        return (int(m.group(1)) if m else 10**9, m.group(2) if m else "")
+    out.sort(key=_key)
+    return out
 
+# ---------- Kontext-Ermittlung (NEU: breiter + Single-Key) ----------
+_CONTEXT_KEYS = {
+    "dokumentteil", "gliederung", "untergliederung", "gliederungsnummer",
+    "buch", "teil", "abschnitt", "unterabschnitt", "kapitel", "glied",
+    "seite", "pos", "anlage"
+}
 
+_ROMANS = ["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII","XIII","XIV","XV","XVI","XVII","XVIII","XIX","XX"]
 
-# ---------- Numerische Probe (ohne Cache) ----------
-def probe_upper_bound(gesetzesnummer: str, unit_type: str = "paragraf") -> Tuple[Optional[int], str]:
+# erweiterte Guess-Liste
+_GUESS_CONTEXTS_ORDERED: List[Tuple[str, List[str]]] = [
+    ("Dokumentteil", _ROMANS),
+    ("Buch", _ROMANS + [str(i) for i in range(1, 11)]),
+    ("Teil", [str(i) for i in range(1, 31)]),
+    ("Abschnitt", [str(i) for i in range(1, 81)]),
+    ("Kapitel", [str(i) for i in range(1, 201)]),
+    ("Untergliederung", [str(i) for i in range(1, 51)]),
+]
+
+def _discover_probe_contexts(gnr: str, unit_type: str, max_pages: int = 60) -> List[Dict[str, str]]:
     """
-    Numerisches Probing der Obergrenze. 404 (NotFound) wird als 'Miss' behandelt
-    und führt NICHT mehr zum Abbruch. Auch Netzfehler werden weich behandelt.
+    Sammelt Single-Key-Kontexte aus ALLEN Links gleicher GNR (auch ohne Paragraf/Artikel).
     """
-    param = "Artikel" if unit_type == "artikel" else "Paragraf"
-    last_hit: Optional[int] = None
-    consec_miss = 0
+    start_urls = _root_toc_urls(gnr)
+    start_urls.insert(0, _toc_url0(gnr, unit_type))
+    queue = list(dict.fromkeys(start_urls))
+    visited = set()
+    contexts: List[Dict[str, str]] = []
+    seen_pairs = set()
 
-    log(f"🔍 Probe für {gesetzesnummer} ({param}) gestartet …")
-
-    for n in range(1, PROBE_MAX + 1):
-        params = {
-            "Abfrage": "Bundesnormen",
-            "Gesetzesnummer": gesetzesnummer,
-            param: str(n),
-        }
-        url = TOC_BASE + "?" + _url.urlencode(params)
+    while queue and len(visited) < max_pages:
+        url = queue.pop(0)
+        if url in visited:
+            continue
+        visited.add(url)
 
         try:
-            html = http_get(url, timeout=REQUEST_TIMEOUT, tries=2, backoff=1.6)
-            ok = ("RIS" in html) and ("NOR" in html or "Art" in html or "§" in html)
-        except NotFound404:
-            # Lücke (z. B. Artikel existiert nicht) → einfach als Miss zählen
-            ok = False
-        except requests.RequestException:
-            # temporärer Netzfehler → als Miss zählen, nicht abbrechen
-            ok = False
+            html = cached_toc_fetch(url)
+        except Exception:
+            continue
 
+        soup = BeautifulSoup(html, "lxml")
+        for a in soup.find_all("a", href=True):
+            full = urljoin("https://www.ris.bka.gv.at/", a["href"])
+            p = urlparse(full)
+            if not p.path.endswith("NormDokument.wxe"):
+                continue
+            qs = parse_qs(p.query)
+            if (qs.get("Gesetzesnummer") or [""])[0] != gnr:
+                continue
+
+            # 1) Single-Key-Kontexte sammeln
+            for k, v in qs.items():
+                kl = k.lower()
+                if kl in _CONTEXT_KEYS and v and v[0] != "":
+                    pair = (k, v[0])
+                    if pair not in seen_pairs:
+                        seen_pairs.add(pair)
+                        contexts.append({k: v[0]})
+
+            # 2) weitere TOC-/Gliederungspfade
+            keys = {k.lower() for k in qs.keys()}
+            param = _param_for_type(unit_type)
+            if (param in qs and qs[param][0] == "0") or "gliederung" in keys or "index" in keys:
+                if full not in visited and full not in queue:
+                    queue.append(full)
+
+        soup.decompose()
+        if len(contexts) >= 60:
+            break
+
+    return contexts
+
+# ---------- Smart-Probe (Kontexte + Guesses) ----------
+def _unit_exists_with_context(gnr: str, unit_type: str, n: int, ctx: Dict[str, str]) -> bool:
+    param = _param_for_type(unit_type)
+    base = {"Abfrage": "Bundesnormen", "Gesetzesnummer": gnr, param: str(n)}
+    base.update(ctx)
+    url = TOC_BASE + "?" + _url.urlencode(base)
+    try:
+        html = http_get(url, timeout=REQUEST_TIMEOUT, tries=PROBE_RETRIES, backoff=PROBE_BACKOFF)
+        return ("NOR" in html) or ("§" in html) or ("Art" in html)
+    except NotFound404:
+        return False
+    except requests.RequestException:
+        return False
+
+def _quick_context_ok(gnr: str, unit_type: str, ctx: Dict[str, str]) -> bool:
+    for probe_n in (1, 50, 200, 500, 900):
+        if _unit_exists_with_context(gnr, unit_type, probe_n, ctx):
+            return True
+    return False
+
+def _smart_probe_single_context(gnr: str, unit_type: str, ctx: Dict[str, str]) -> Optional[int]:
+    low, high = 0, 1
+    miss = 0
+    while high <= PROBE_MAX:
+        ok = _unit_exists_with_context(gnr, unit_type, high, ctx)
         if ok:
-            last_hit = n
-            consec_miss = 0
+            low = high
+            high *= 2
+            miss = 0
         else:
-            consec_miss += 1
-            if consec_miss >= PROBE_CONSEC_MISS:
+            miss += 1
+            if miss >= MISSING_STREAK_ABORT and low == 0:
+                return None
+            break
+    if low == 0:
+        return None
+    if high > PROBE_MAX:
+        high = PROBE_MAX
+    lo, hi = low, high
+    while lo + 1 < hi:
+        mid = (lo + hi) // 2
+        if _unit_exists_with_context(gnr, unit_type, mid, ctx):
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+def smart_probe_upper_bound(gnr: str, unit_type: str, contexts: List[Dict[str, str]]) -> Optional[int]:
+    param = _param_for_type(unit_type)
+    all_contexts: List[Tuple[str, Dict[str, str]]] = [("none", {})]
+
+    for ctx in contexts:
+        all_contexts.append(("discovered", ctx))
+
+    # Wenn keine Kontexte gefunden wurden: aggressive, aber begrenzte Guess-Liste
+    if len(contexts) == 0:
+        for key, vals in _GUESS_CONTEXTS_ORDERED:
+            for val in vals:
+                all_contexts.append(("guess", {key: val}))
+
+    # Begrenzungen, damit wir nicht „ewig“ probieren
+    MAX_GUESSES = 120           # höchstens so viele Kontext-Versuche insgesamt
+    EARLY_STOP_THRESHOLD = 300  # wenn wir >=300 finden, reicht uns das i.d.R.
+    best = None
+
+    disc = sum(1 for k, _ in all_contexts if k == "discovered")
+    guess = sum(1 for k, _ in all_contexts if k == "guess")
+    log(f"🔍 SmartProbe für {gnr} ({param}) mit {disc} Kontexte(n) + {guess} Guess …")
+
+    tried = 0
+    for kind, ctx in all_contexts:
+        if ctx:
+            # schneller Vorcheck – wenn nichts trifft, Kontext überspringen
+            if not _quick_context_ok(gnr, unit_type, ctx):
+                tried += 1
+                if tried % 25 == 0:
+                    log(f"   … SmartProbe Fortschritt: {tried} Kontexte geprüft")
+                if tried >= MAX_GUESSES:
+                    log("   ⛔ Guess-Limit erreicht.")
+                    break
+                continue
+
+        res = _smart_probe_single_context(gnr, unit_type, ctx)
+        tried += 1
+        if res is not None:
+            best = res if best is None else max(best, res)
+            if best >= EARLY_STOP_THRESHOLD:
+                log(f"   ✅ Frühabbruch: ausreichende Obergrenze erkannt ({best} ≥ {EARLY_STOP_THRESHOLD})")
                 break
 
-        if n % 50 == 0:
-            log(f"   ... Probe-Fortschritt: {param} {n}")
+        if tried % 25 == 0:
+            log(f"   … SmartProbe Fortschritt: {tried} Kontexte geprüft")
+        if tried >= MAX_GUESSES:
+            log("   ⛔ Guess-Limit erreicht.")
+            break
 
-        time.sleep(PROBE_DELAY)
+    if best is not None:
+        log(f"   ✅ SmartProbe-Ergebnis (max): {best}")
+    else:
+        log("   ❌ SmartProbe: kein Kontext lieferte Treffer.")
+    return best
 
-    log(f"✅ Probe beendet: letzte Treffer-Nr. = {last_hit}")
-    return last_hit, unit_type
 
-    
+# ---------- Sammeln aller Einheiten (nur Info) ----------
+def collect_all_units(gnr: str, unit_type: str, include_annexes: bool, max_pages: int = 60, deep: bool = False) -> list[str]:
+    start_urls = _root_toc_urls(gnr)
+    start_urls.insert(0, _toc_url0(gnr, unit_type))
+    queue, seen_roots = [], set()
+    for u in start_urls:
+        if u not in seen_roots:
+            seen_roots.add(u); queue.append(u)
 
+    visited, all_units = set(), []
+    visited_count = 0
+    while queue and len(visited) < max_pages:
+        url = queue.pop(0)
+        if url in visited: continue
+        visited.add(url); visited_count += 1
+        try:
+            html = cached_toc_fetch(url)
+        except NotFound404:
+            continue
+        except requests.RequestException:
+            continue
+        all_units.extend(_parse_units_from_toc_html(html))
+
+        soup = BeautifulSoup(html, "lxml")
+        base = "https://www.ris.bka.gv.at/"
+        for a in soup.find_all("a", href=True):
+            full = urljoin(base, a["href"])
+            p = urlparse(full)
+            if not p.path.endswith("NormDokument.wxe"):
+                continue
+            qs = parse_qs(p.query)
+            g = (qs.get("Gesetzesnummer") or [""])[0]
+            if g != gnr: continue
+            keys = {k.lower() for k in qs.keys()}
+            param = _param_for_type(unit_type)
+            if (param in qs and qs[param][0] == "0") or "gliederung" in keys or "index" in keys:
+                if full not in visited and full not in queue:
+                    queue.append(full)
+        soup.decompose()
+
+    out, seen = [], set()
+    for u in all_units:
+        key = u.strip().lower()
+        if key in {"§ 0","§0","art. 0","art.0"}: continue
+        if u not in seen:
+            seen.add(u); out.append(u)
+    log(f"   ↪ TOC/Unter-TOC Seiten besucht: {visited_count}")
+    return out
 
 # ---------- Hauptprozess ----------
-def enrich_laws(input_path: Path, output_path: Path, overwrite_existing: bool = False) -> Tuple[int, int]:
+def enrich_laws(input_path: Path, output_path: Path, overwrite_existing: bool = False,
+                include_annexes: bool = False, max_pages: int = 60, deep: bool = False) -> Tuple[int, int]:
     data = json.loads(input_path.read_text(encoding="utf-8"))
     changed = 0
     unchanged = 0
@@ -222,76 +376,61 @@ def enrich_laws(input_path: Path, output_path: Path, overwrite_existing: bool = 
 
     for i, law in enumerate(data, 1):
         gnr = str(law.get("gesetzesnummer") or "").strip()
-        kurz = law.get("kurz", "???")
+        kurz = law.get("kurz", law.get("titel", "???"))
         if not gnr:
             continue
 
-        if (not overwrite_existing) and isinstance(law.get("fallback_end"), int):
+        if (not overwrite_existing) and isinstance(law.get("fallback_end"), int) and law.get("unit_type"):
             unchanged += 1
             continue
 
-        log(f"[{i}/{len(data)}] 🧩 {kurz} ({gnr}) – TOC lesen …")
-        units: List[str] = []
-        unit_type = "paragraf"
+        log(f"[{i}/{len(data)}] 🧩 {kurz} ({gnr}) – TOC sammeln …")
 
-        # 1) Erst Artikel=0 versuchen, 404 ist ok → dann Paragraf=0
-        try:
-            html = fetch_toc_html(gnr, "Artikel")
-            units, unit_type = parse_toc(html)
-        except NotFound404:
-            log("   ℹ️ Artikel-TOC existiert nicht (404) – versuche Paragraf-TOC …")
-        except requests.RequestException as e:
-            log(f"   ⚠️ Netzfehler bei Artikel-TOC: {e} – versuche Paragraf-TOC …")
+        units_art = collect_all_units(gnr, "artikel", include_annexes, max_pages=max_pages, deep=deep)
+        units_par = collect_all_units(gnr, "paragraf", include_annexes, max_pages=max_pages, deep=deep)
 
-        if not units:
-            try:
-                html = fetch_toc_html(gnr, "Paragraf")
-                units, unit_type = parse_toc(html)
-            except NotFound404:
-                log("   ℹ️ Paragraf-TOC existiert nicht (404).")
-            except requests.RequestException as e:
-                log(f"   ⚠️ Netzfehler bei Paragraf-TOC: {e} – überspringe Gesetz.")
-                # zum nächsten Gesetz weiter
-                unchanged += 1
-                time.sleep(SLEEP_BETWEEN_LAWS)
-                continue
+        if len(units_art) > len(units_par):
+            unit_type = "artikel"; units = units_art
+        else:
+            unit_type = "paragraf"; units = units_par
 
-        # 2) Max bestimmen
-        mx = 0
+        mx_from_toc = 0
         for u in units:
             m = re.search(r"(\d+)", u)
             if m:
-                mx = max(mx, int(m.group(1)))
+                mx_from_toc = max(mx_from_toc, int(m.group(1)))
+        log(f"   → {len(units)} {unit_type}-Einheiten gefunden, max = {mx_from_toc}")
 
-        log(f"   → {len(units)} {unit_type}-Einheiten gefunden, max = {mx}")
-        if len(units) < 10 and mx >= 300:
-            log("   ⚠️ Unplausibler TOC-max (zu wenige Einheiten, sehr hoher max) – ignoriere und probe …")
-            mx = 0  # zwingt den Probe-Zweig unten
+        contexts = _discover_probe_contexts(gnr, unit_type, max_pages=max_pages)
+        if contexts:
+            log(f"   ↪ gefundene Kontexte: {len(contexts)} (z. B. {contexts[0]})")
 
-        # 3) Falls wenig/leer → Probe
-        if PROBE_ON_EMPTY_TOC and (mx < 2 or len(units) < 50):
-            log("   ⚠️ TOC unvollständig – starte Probe …")
-            # 1) zuerst im erkannten Typ
-            ub, utype = probe_upper_bound(gnr, unit_type)
-            # 2) wenn nichts gefunden: automatisch den anderen Typ versuchen
-            if not ub:
-                other = "artikel" if unit_type == "paragraf" else "paragraf"
-                log(f"   ℹ️ Erste Probe ohne Ergebnis – versuche alternativ: {other} …")
-                ub2, utype2 = probe_upper_bound(gnr, other)
-                if ub2:
-                    ub, utype = ub2, utype2
+        if len(units) >= PROBE_MIN_TOC_SIZE and mx_from_toc > 0:
+            mx = mx_from_toc
+            source = "toc_crawl"
+        else:
+            log("   ⚠️ TOC klein/leer – starte SmartProbe (Kontexte/Guesses) …")
+            mx = smart_probe_upper_bound(gnr, unit_type, contexts) or 0
+            source = f"smartprobe:{unit_type}"
 
-            if ub and ub > 1:
-                mx = ub
-                unit_type = utype
-                log(f"   ✅ Probe erfolgreich: max = {mx} ({unit_type})")
+            # Wenn wir nach der Probe immer noch zu niedrig sind und ein Notanker existiert:
+            if mx < 200 and gnr in KNOWN_MAX:
+                log(f"   ℹ️ Verwende bekannten Max-Wert für {kurz}: {KNOWN_MAX[gnr]}")
+                mx = KNOWN_MAX[gnr]
+                source = "known_max"
 
-        # 4) Speichern / weiter
+
+        if (mx < 2) and (gnr in KNOWN_MAX):
+            mx = KNOWN_MAX[gnr]; source = "known_max"
+
         if mx > 1:
-            law["fallback_end"] = mx
-            law["unit_type"] = unit_type
-            law["fallback_source"] = "toc_lowmem" if len(units) >= 50 else f"probe:{unit_type}"
+            if overwrite_existing or not isinstance(law.get("fallback_end"), int):
+                law["fallback_end"] = mx
+            if overwrite_existing or not law.get("unit_type"):
+                law["unit_type"] = unit_type
+            law["fallback_source"] = source
             changed += 1
+            log(f"   ✅ Ergebnis: {unit_type} bis {mx} ({source})")
         else:
             unchanged += 1
             log("   ❌ Keine Grenze ermittelbar.")
@@ -303,21 +442,25 @@ def enrich_laws(input_path: Path, output_path: Path, overwrite_existing: bool = 
     log(f"✅ ergänzt: {changed}, unverändert: {unchanged}")
     return changed, unchanged
 
-
 def main():
-    ap = argparse.ArgumentParser(description="Low-memory RIS Fallback Tool (robust)")
+    ap = argparse.ArgumentParser(description="RIS Fallback-End Enrichment (SmartProbe + Context v3)")
     ap.add_argument("--in", dest="in_path",  default="ris_law/data/laws.json")
     ap.add_argument("--out", dest="out_path", default="ris_law/data/laws_enriched.json")
     ap.add_argument("--overwrite-existing", action="store_true")
+    ap.add_argument("--include-annexes", action="store_true")
+    ap.add_argument("--max-pages", type=int, default=60)
+    ap.add_argument("--deep", action="store_true")
     args = ap.parse_args()
 
-    log(f"🚀 Starte Low-Mem-Enrichment: {args.in_path}")
+    log(f"🚀 Starte Enrichment: {args.in_path}")
     try:
-        enrich_laws(Path(args.in_path), Path(args.out_path), args.overwrite_existing)
+        enrich_laws(Path(args.in_path), Path(args.out_path),
+                    overwrite_existing=args.overwrite_existing,
+                    include_annexes=args.include_annexes,
+                    max_pages=args.max_pages, deep=args.deep)
     except KeyboardInterrupt:
         log("⛔ Abgebrochen (Ctrl+C).")
     log("🏁 Fertig!")
-
 
 if __name__ == "__main__":
     main()
