@@ -9,7 +9,7 @@ NS_SOAP = "http://schemas.xmlsoap.org/soap/envelope/"
 NS_SVC = "http://webservice.bka.gv.at/ris/services/RISWebService"
 HEADERS_SOAP = {"Content-Type": "text/xml; charset=utf-8"}
 USER_AGENT = "RISLawClient/1.0"
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 20
 
 
 def load_laws() -> List[Dict[str, Any]]:

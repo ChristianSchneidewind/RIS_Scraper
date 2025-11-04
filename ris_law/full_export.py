@@ -1,163 +1,167 @@
-# ris_law/full_export.py
-# --------------------------------------------
-# Reduziertes Logging: Nur Start/Ende + Fortschritt pro 50 Einheiten
-# --------------------------------------------
-
 from __future__ import annotations
-import json
-import time
-import datetime as dt
-from typing import Optional
-from urllib.parse import urlencode
-import requests
-from bs4 import BeautifulSoup
 
-DEFAULT_HEADERS = {
-    "User-Agent": "ris-law/0.1 (+github.com/christianschneidewind/ris-law)",
+import time
+import json
+from typing import Optional, Dict, Any
+from urllib.parse import urlencode
+
+import requests
+
+from .html_parser import fetch_paragraph_text_via_html
+from .soap_client import get_law_metadata, parse_dates_from_html  # zentrale Datumslogik hier!
+
+RIS_NORMDOK_BASE = "https://www.ris.bka.gv.at/NormDokument.wxe"
+
+_HTML_HEADERS = {
+    "User-Agent": "ris-law/0.1 (+local full_export)",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
-REQUEST_TIMEOUT = 30
 
 
-def _make_toc_url(gesetzesnummer: str, numeric_pid: int, unit_type: str = "paragraf") -> str:
-    param = "Artikel" if str(unit_type).lower().startswith("art") else "Paragraf"
-    query = {
+def _unit_url(gesetzesnummer: str, unit_type: str, nr_or_label: int | str) -> str:
+    key = "Artikel" if str(unit_type).lower().startswith("art") else "Paragraf"
+    q = {
         "Abfrage": "Bundesnormen",
         "Gesetzesnummer": gesetzesnummer,
-        param: str(numeric_pid),
+        key: str(nr_or_label),
         "Uebergangsrecht": "",
         "Anlage": "",
     }
-    return "https://www.ris.bka.gv.at/NormDokument.wxe?" + urlencode(query)
+    return f"{RIS_NORMDOK_BASE}?{urlencode(q)}"
 
 
-def _http_get(url: str, *, tries: int = 2, backoff: float = 1.6) -> requests.Response:
-    attempt = 0
-    last_exc: Optional[Exception] = None
-    while attempt < tries:
-        try:
-            r = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
-            if r.status_code == 200:
-                return r
-            return r
-        except Exception as e:
-            last_exc = e
-            time.sleep(backoff * (attempt + 1))
-        attempt += 1
-    if last_exc:
-        raise last_exc
-    raise RuntimeError("Unbekannter Fehler bei HTTP-GET")
+def _fetch_unit_html(gesetzesnummer: str, unit_type: str, nr_or_label: int | str) -> Optional[str]:
+    url = _unit_url(gesetzesnummer, unit_type, nr_or_label)
+    try:
+        r = requests.get(url, headers=_HTML_HEADERS, timeout=30)
+        if r.status_code == 200 and "<html" in r.text.lower():
+            return r.text
+    except requests.RequestException:
+        pass
+    return None
 
 
-def _extract_plain_text(html: str) -> str:
-    soup = BeautifulSoup(html, "lxml")
-    main = soup.find(id="content") or soup.find("body") or soup
-    text = main.get_text("\n")
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return "\n".join(lines)
-
-
-def _write_jsonl_line(path: str, obj: dict) -> None:
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-
-
-def build_complete_numeric(
-    out_path: str,
+def export_full_jsonl(
+    *,
     gesetzesnummer: str,
     law_name: str,
-    *,
+    unit_type: str,           # "artikel" | "paragraf"
     start_num: int = 1,
-    end_num: int,
-    granularity: str = "para",
-    include_aufgehoben: bool = False,
+    end_num: int = 1,
+    out_path: str = "out.jsonl",
     delay: float = 1.0,
-    unit_type: str = "paragraf",
+    include_aufgehoben: bool = False,
+    laws_json_path: Optional[str] = None,   # nur Signatur-Kompatibilität
 ) -> int:
     """
-    Holt Einheiten (Paragraf/Artikel) im Bereich [start_num, end_num]
-    und schreibt sie als JSONL-Zeilen.
+    Voll-Export (start_num..end_num).
+    Pro Basisnummer wird zusätzlich eine Suffix-Schleife (a..z) probiert und
+    beim ersten Loch beendet (typische RIS-Struktur: zusammenhängende Kette).
     """
-    rows = 0
-    now_iso = dt.datetime.utcnow().isoformat() + "Z"
-    unit_label = "Artikel" if str(unit_type).lower().startswith("art") else "§"
+    print(f"[RIS] Starte Voll-Export {law_name} ({gesetzesnummer}) – {unit_type}, bis {end_num}")
 
-    print(f"[RIS] → Starte Export {law_name} ({gesetzesnummer}) [{unit_label} {start_num}–{end_num}]")
+    # Fallback-Metadaten vom Gesetz (Art.0/§0)
+    law_meta = get_law_metadata(gesetzesnummer) or {}
+    law_date_in  = law_meta.get("date_in_force")
+    law_date_out = law_meta.get("date_out_of_force")
+    law_pub      = law_meta.get("kundmachungsdatum")
 
-    for n in range(int(start_num), int(end_num) + 1):
-        url = _make_toc_url(gesetzesnummer, n, unit_type)
+    def _write_unit(nr_or_label: str | int) -> bool:
+        """
+        Schreibt EINE Einheit. Gibt True zurück, wenn die Einheit existierte und
+        eine Zeile geschrieben wurde; sonst False (z. B. 404/kein HTML).
+        """
+        unit_url = _unit_url(gesetzesnummer, unit_type, nr_or_label)
+
+        # 1) HTML (Existenz + Metadaten)
+        html = _fetch_unit_html(gesetzesnummer, unit_type, nr_or_label)
+        if not html:
+            return False
+
+        # 2) Text der Einheit (dein bestehender Parser)
+        parsed: Dict[str, Any] = {}
         try:
-            r = _http_get(url, tries=2, backoff=1.6)
-        except Exception as e:
-            _write_jsonl_line(
-                out_path,
-                {
-                    "law": law_name,
-                    "gesetzesnummer": gesetzesnummer,
-                    "unit_type": unit_type,
-                    "unit": f"{unit_label} {n}",
-                    "status": f"resolve_failed: {type(e).__name__} {e}",
-                    "url": url,
-                    "fetched_at": now_iso,
-                },
-            )
-            continue
+            parsed = fetch_paragraph_text_via_html(unit_url) or {}
+        except Exception:
+            parsed = {}
 
-        if r.status_code == 404:
-            _write_jsonl_line(
-                out_path,
-                {
-                    "law": law_name,
-                    "gesetzesnummer": gesetzesnummer,
-                    "unit_type": unit_type,
-                    "unit": f"{unit_label} {n}",
-                    "status": "not_found",
-                    "url": url,
-                    "fetched_at": now_iso,
-                },
-            )
-            continue
+        text = (parsed.get("text") or "").strip()
+        heading = (parsed.get("heading") or "").strip()
+        nor = (parsed.get("nor") or "").strip()
 
-        if r.status_code != 200:
-            _write_jsonl_line(
-                out_path,
-                {
-                    "law": law_name,
-                    "gesetzesnummer": gesetzesnummer,
-                    "unit_type": unit_type,
-                    "unit": f"{unit_label} {n}",
-                    "status": f"http_{r.status_code}",
-                    "url": url,
-                    "fetched_at": now_iso,
-                },
-            )
-            continue
+        # 3) Einheits-Metadaten: zentral aus soap_client.parse_dates_from_html
+        u_meta = parse_dates_from_html(html) or {}
+        date_in  = u_meta.get("date_in_force")     or law_date_in
+        date_out = u_meta.get("date_out_of_force") or law_date_out
+        date_pub = u_meta.get("kundmachungsdatum") or law_pub
 
-        text = _extract_plain_text(r.text).strip()
-        status = "ok" if text else "empty"
+        row: Dict[str, Any] = {
+            "gesetzesnummer": gesetzesnummer,
+            "law": law_name,
+            "unit_type": unit_type,
+            "unit": f"{'Art.' if unit_type.lower().startswith('art') else '§'} {nr_or_label}",
+            "unit_number": str(nr_or_label),
+            "date_in_force": date_in,
+            "date_out_of_force": date_out,
+            "kundmachungsdatum": date_pub,
+            "status": "ok" if text else "resolve_failed",
+            "text": text,
+            "heading": heading,
+            "nor": nor,
+            "url": unit_url,
+        }
 
-        _write_jsonl_line(
-            out_path,
-            {
-                "law": law_name,
-                "gesetzesnummer": gesetzesnummer,
-                "unit_type": unit_type,
-                "unit": f"{unit_label} {n}",
-                "status": status,
-                "text": text,
-                "url": url,
-                "fetched_at": now_iso,
-                "granularity": granularity,
-            },
-        )
-        rows += 1
+        f.write(json.dumps(row, ensure_ascii=False))
+        f.write("\n")
+        return True
 
-        # Fortschrittsanzeige nur jede 50. Einheit
-        if n % 50 == 0:
-            print(f"   ↳ Fortschritt: {n}/{end_num}")
+    written = 0
+    with open(out_path, "w", encoding="utf-8") as f:
+        for nr in range(int(start_num), int(end_num) + 1):
+            # Basisnummer
+            if _write_unit(nr):
+                written += 1
 
-        if delay:
-            time.sleep(delay)
+            # Suffixe a..z
+            for code in range(ord('a'), ord('z') + 1):
+                label = f"{nr}{chr(code)}"
+                if _write_unit(label):
+                    written += 1
+                else:
+                    # Suffix-Kette für diese Basisnummer endet hier
+                    break
 
-    print(f"[RIS] ✅ Fertig: {rows} Einträge gespeichert ({law_name})")
-    return rows
+            if delay:
+                time.sleep(delay)
+            if nr % 50 == 0 or nr == end_num:
+                print(f"  ║ Fortschritt: {nr}/{end_num}")
+
+    print(f"[RIS] ✅ Fertig: {written} Einträge gespeichert ({law_name})")
+    return written
+
+
+# --- Kompatibilitäts-Wrapper für api.py (nicht anfassen) -------------------------
+
+def build_complete_numeric(
+    *,
+    gesetzesnummer: str,
+    law_name: str,
+    unit_type: str,
+    start_num: int = 1,
+    end_num: int = 1,
+    out_path: str = "out.jsonl",
+    delay: float = 1.0,
+    include_aufgehoben: bool = False,
+    laws_json_path: Optional[str] = None,
+) -> int:
+    return export_full_jsonl(
+        gesetzesnummer=gesetzesnummer,
+        law_name=law_name,
+        unit_type=unit_type,
+        start_num=start_num,
+        end_num=end_num,
+        out_path=out_path,
+        delay=delay,
+        include_aufgehoben=include_aufgehoben,
+        laws_json_path=laws_json_path,
+    )
