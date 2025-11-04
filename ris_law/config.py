@@ -4,9 +4,12 @@ import json
 from importlib.resources import files
 from typing import Any, Dict, List, Optional
 
-BASE = "https://www.ris.bka.gv.at"
-USER_AGENT = "RIS-Law-Scraper/1.1 (+https://github.com/yourrepo)"
-REQUEST_TIMEOUT = 20
+BASE_URL = "https://www.ris.bka.gv.at"
+NS_SOAP = "http://schemas.xmlsoap.org/soap/envelope/"
+NS_SVC = "http://webservice.bka.gv.at/ris/services/RISWebService"
+HEADERS_SOAP = {"Content-Type": "text/xml; charset=utf-8"}
+USER_AGENT = "RISLawClient/1.0"
+REQUEST_TIMEOUT = 30
 
 
 def load_laws() -> List[Dict[str, Any]]:
