@@ -104,6 +104,7 @@ def export_full_jsonl(
             "unit": f"{'Art.' if unit_type.lower().startswith('art') else '§'} {nr_or_label}",
             "unit_number": str(nr_or_label),
             "date_in_force": date_in,
+            "date_out_of_force": date_out,
             "license": license_note,
             "status": "ok" if text else "resolve_failed",
             "text": text,
