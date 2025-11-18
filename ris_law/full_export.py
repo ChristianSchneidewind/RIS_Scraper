@@ -17,6 +17,8 @@ _HTML_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
+license_note = "Datenquelle: RIS – https://www.ris.bka.gv.at/, Lizenz: CC BY 4.0"
+
 
 def _unit_url(gesetzesnummer: str, unit_type: str, nr_or_label: int | str) -> str:
     key = "Artikel" if str(unit_type).lower().startswith("art") else "Paragraf"
@@ -102,8 +104,7 @@ def export_full_jsonl(
             "unit": f"{'Art.' if unit_type.lower().startswith('art') else '§'} {nr_or_label}",
             "unit_number": str(nr_or_label),
             "date_in_force": date_in,
-            "date_out_of_force": date_out,
-            "kundmachungsdatum": date_pub,
+            "license": license_note,
             "status": "ok" if text else "resolve_failed",
             "text": text,
             "heading": heading,
