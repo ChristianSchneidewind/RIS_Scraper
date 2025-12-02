@@ -10,7 +10,7 @@ from datetime import date
 BASE_URL = "https://data.bka.gv.at/ris/api/v2.6/Bundesrecht"
 
 # Wie viele Seiten maximal? Zum Testen z.B. 200, für „alles“ auf None setzen.
-MAX_PAGES = None  # oder z.B. 200
+MAX_PAGES = 600  # oder z.B. 200
 
 # Stichtag, für den die Geltung geprüft werden soll
 AS_OF_DATE = date.today().isoformat()
@@ -203,15 +203,12 @@ def handle_results(results_obj: dict, laws: Dict[str, Any], page: int) -> None:
             law["typ"] = normtyp
 
         # Paragraph/Artikel-Nummern sammeln
-        if doktyp == "Paragraph":
-            nr = paragrafnr
-        elif doktyp == "Artikel":
-            nr = artikelnr
-        else:
-            nr = None  # Anlagen etc. ignorieren für fallback_end
+        if paragrafnr:
+            law["numbers"].append({"typ": "Paragraph", "nr": paragrafnr})
 
-        if nr:
-            law["numbers"].append({"typ": doktyp, "nr": nr})
+        if artikelnr:
+            law["numbers"].append({"typ": "Artikel", "nr": artikelnr})
+
 
     if first_gnr is not None:
         print(f"[DEBUG] Seite {page}: erste gesetzesnummer={first_gnr}, jetzt {len(laws)} Gesetze")
@@ -298,6 +295,8 @@ def build_summary(laws: Dict[str, Any]):
         "gesetzesnummer": ...,
         "fallback_end": <int|None>,
         "unit_type": "paragraf"|"artikel"|None,
+        "has_paragraphs": bool,
+        "has_articles": bool,
         "inkraft": "...",
         "ausserkraft": null,
         "typ": "BG" | "V" | ...
@@ -310,21 +309,42 @@ def build_summary(laws: Dict[str, Any]):
         if not numbers:
             fallback_end = None
             unit_type = None
+            has_paragraphs = False
+            has_articles = False
         else:
-            counts = Counter(n["typ"] for n in numbers)
-            if counts.get("Paragraph", 0) >= counts.get("Artikel", 0):
-                unit_type = "paragraf"
-                raw_numbers = [n["nr"] for n in numbers if n["typ"] == "Paragraph"]
-            else:
-                unit_type = "artikel"
-                raw_numbers = [n["nr"] for n in numbers if n["typ"] == "Artikel"]
+            # getrennt sammeln
+            paragraph_numbers = [n["nr"] for n in numbers if n["typ"] == "Paragraph"]
+            article_numbers = [n["nr"] for n in numbers if n["typ"] == "Artikel"]
 
-            nums = []
-            for s in raw_numbers:
-                m = re.match(r"(\d+)", s)
-                if m:
-                    nums.append(int(m.group(1)))
-            fallback_end = max(nums) if nums else None
+            count_par = len(paragraph_numbers)
+            count_art = len(article_numbers)
+
+            has_paragraphs = count_par > 0
+            has_articles = count_art > 0
+
+            if count_par == 0 and count_art == 0:
+                fallback_end = None
+                unit_type = None
+            else:
+                # Mischform: Artikel + Paragraph → Artikel als äußere Einheit
+                if has_paragraphs and has_articles:
+                    unit_type = "artikel"
+                    raw_numbers = article_numbers
+                # Nur Paragraphen → wie bisher
+                elif has_paragraphs:
+                    unit_type = "paragraf"
+                    raw_numbers = paragraph_numbers
+                # Nur Artikel → wie bisher
+                else:
+                    unit_type = "artikel"
+                    raw_numbers = article_numbers
+
+                nums = []
+                for s in raw_numbers:
+                    m = re.match(r"(\d+)", s)
+                    if m:
+                        nums.append(int(m.group(1)))
+                fallback_end = max(nums) if nums else None
 
         out.append(
             {
@@ -333,6 +353,8 @@ def build_summary(laws: Dict[str, Any]):
                 "gesetzesnummer": gesetzesnummer,
                 "fallback_end": fallback_end,
                 "unit_type": unit_type,
+                "has_paragraphs": has_paragraphs,
+                "has_articles": has_articles,
                 "inkraft": law.get("inkraft"),
                 "ausserkraft": law.get("ausserkraft"),
                 "typ": law.get("typ"),
