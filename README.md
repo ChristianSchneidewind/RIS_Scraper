@@ -69,6 +69,12 @@ ris-law \
   --granularity nor \
   --include-aufgehoben
 ```
+### Beispiel: Gesetzesnummer im RIS
+
+![Beispiel einer Gesetzesnummer im RIS](ris_law/assets/ris_gesetzesnummer.png)
+
+*Quelle: Screenshot aus dem Rechtsinformationssystem des Bundes (RIS), ris.bka.gv.at*
+
 
 Beispiel für das ABGB:
 
