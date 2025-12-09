@@ -149,6 +149,9 @@ Die Bibliothek cached nichts – für große Läufe ggf. delay anpassen
 
 🧑‍💻 Autor & Lizenz
 
+Bei Fragen oder Problemen bitte bevorzugt ein GitHub Issue eröffnen.  
+Alternativ (für nicht-öffentliche Anfragen): risscraper [at] gmail [dot] com
+
 Autor: Christian Schneidewind
 Lizenz: MIT
 Datenquelle: RIS – https://www.ris.bka.gv.at/
