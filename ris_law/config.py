@@ -33,8 +33,41 @@ def find_law(identifier: str) -> Optional[Dict[str, Any]]:
 
 
 def fallback_end_for(gesetzesnummer_or_kurz: str) -> Optional[int]:
-    """Gibt die Fallback-Obergrenze (End-§) zurück, falls konfiguriert."""
+    """
+    Gibt die Fallback-Obergrenze zurück.
+
+    Unterstützt:
+      - fallback_end (alt)
+      - fallback_end_paragraf / fallback_end_artikel (neu)
+      - unit_type kann String oder Liste sein (bei Liste: erste Position = Priorität)
+    """
     law = find_law(gesetzesnummer_or_kurz)
     if not law:
         return None
-    return law.get("fallback_end")
+
+    # 1) Wenn das alte Feld existiert, bleibt das Verhalten identisch
+    if "fallback_end" in law and law.get("fallback_end") is not None:
+        return law.get("fallback_end")
+
+    unit_type = law.get("unit_type")
+
+    # unit_type kann Liste sein
+    if isinstance(unit_type, list):
+        unit_type = unit_type[0] if unit_type else None
+
+    if isinstance(unit_type, str):
+        ut = unit_type.lower()
+        if ut.startswith("art"):
+            return (
+                law.get("fallback_end_artikel")
+                or law.get("fallback_end_paragraf")
+            )
+        else:
+            return (
+                law.get("fallback_end_paragraf")
+                or law.get("fallback_end_artikel")
+            )
+
+    # Fallback, falls unit_type gar nicht gesetzt ist
+    return law.get("fallback_end_paragraf") or law.get("fallback_end_artikel")
+
