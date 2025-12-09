@@ -75,6 +75,10 @@ ris-law \
 
 *Quelle: Screenshot aus dem Rechtsinformationssystem des Bundes (RIS), ris.bka.gv.at*
 
+⚠️ Hinweis: Bei Mischgesetzen (Artikel/Paragraph) empfiehlt sich die zusätzliche
+Ausführung von `split_paragraphs_from_articles.py`, da beim TOC-Export mehrere
+Paragraphen in einer einzelnen Zeile gespeichert werden können.
+
 
 Beispiel für das ABGB:
 
