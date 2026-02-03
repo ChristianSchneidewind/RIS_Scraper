@@ -34,6 +34,26 @@ Oder nach dem Build als normales Paket:
 `pip install ris-law`
 
 🧠 Nutzung als Python-Bibliothek
+
+### RIS API v2.6 (empfohlen)
+```python
+from ris_law import RisApiClient
+
+client = RisApiClient()
+
+# Beispiel: Bundesrecht (GET)
+data = client.get(
+    "Bundesrecht",
+    params={
+        "Applikation": "BrKons",
+        "Seitennummer": 1,
+        "DokumenteProSeite": "OneHundred",
+        "Fassung.FassungVom": "2024-01-01",
+    },
+)
+```
+
+### Legacy HTML/TOC Export (optional)
 `from ris_law import iter_law, write_jsonl`
 
 # Beispiel 1: Paragraphen streamen (Iterator)
@@ -62,12 +82,19 @@ delay	Pause in Sekunden zwischen Requests
 
 Nach der Installation steht ein CLI-Befehl zur Verfügung:
 ``` bash
-ris-law \
-  --gesetzesnummer 10002296 \
-  --law StGB \
-  --out stgb.jsonl \
-  --granularity nor \
-  --include-aufgehoben
+# Version prüfen
+ris-law version get
+
+# Bundesrecht abfragen (GET)
+ris-law bundesrecht get \
+  --param Applikation=BrKons \
+  --param Seitennummer=1 \
+  --param DokumenteProSeite=OneHundred \
+  --param Fassung.FassungVom=2024-01-01 \
+  --json
+
+# POST mit JSON-Body (Datei)
+ris-law judikatur post --body-file query.json --json
 ```
 ### Beispiel: Gesetzesnummer im RIS
 
