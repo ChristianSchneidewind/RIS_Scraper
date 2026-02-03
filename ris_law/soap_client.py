@@ -1,6 +1,12 @@
-import requests
+import logging
+
 from lxml import etree
+
 from .config import BASE_URL, NS_SOAP, NS_SVC, HEADERS_SOAP, USER_AGENT
+from .exceptions import RisSoapError
+from .http_client import get_default_http_client
+
+logger = logging.getLogger(__name__)
 
 def soap_envelope(inner_xml: str) -> str:
     return (
@@ -14,14 +20,25 @@ def post_soap(action: str, body_xml: str, timeout: int = 120) -> etree._Element:
     h = dict(HEADERS_SOAP)
     h["SOAPAction"] = action
     h["User-Agent"] = USER_AGENT
-    resp = requests.post(BASE_URL, data=body_xml.encode("utf-8"), headers=h, timeout=timeout)
+    client = get_default_http_client()
+    try:
+        resp = client.post(
+            BASE_URL,
+            data=body_xml.encode("utf-8"),
+            headers=h,
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RisSoapError(str(exc)) from exc
     try:
         with open("last_envelope_raw.xml", "w", encoding="utf-8") as dbg:
             dbg.write(resp.text)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
-    resp.raise_for_status()
-    return etree.fromstring(resp.content)
+    try:
+        return etree.fromstring(resp.content)
+    except Exception as exc:  # noqa: BLE001
+        raise RisSoapError("Invalid SOAP response") from exc
 
 def result_embedded_xml(res: etree._Element) -> str:
     if res is None:
@@ -34,9 +51,9 @@ def version_check() -> None:
     try:
         body = f'<Version xmlns="{NS_SVC}"/>'
         post_soap(f"{NS_SVC}/Version", soap_envelope(body))
-        print("[OK] Version-Call")
-    except Exception as e:
-        print("[WARN] Version-Call:", e)
+        logger.info("[OK] Version-Call")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[WARN] Version-Call: %s", exc)
 
 
 # ---------------------------------------------------------------------------

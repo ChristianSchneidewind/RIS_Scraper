@@ -1,10 +1,12 @@
+import logging
 import re
 import time
 import urllib.parse as _url
 from typing import List, Tuple, Dict, Optional
 
-import requests
 from bs4 import BeautifulSoup
+
+from .http_client import HttpClient
 
 # -----------------------------------------------------
 # Offizielle §0-Seite (Inhaltsverzeichnis) im RIS
@@ -14,6 +16,8 @@ RIS_TOC_URL = "https://www.ris.bka.gv.at/NormDokument.wxe"
 DEFAULT_HEADERS = {
     "User-Agent": "RIS-Law-Scraper/1.1 (+https://github.com/yourrepo; contact: you@example.com)"
 }
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_paragraph_from_href(href: str) -> Optional[str]:
@@ -83,46 +87,60 @@ def fetch_toc_html(
     if fassung_vom:
         params["FassungVom"] = fassung_vom
 
-    last: Optional[requests.Response] = None
+    client = HttpClient(retries=1)
+    last_text: Optional[str] = None
+    last_error: Optional[Exception] = None
 
     for i in range(tries):
         attempt = i + 1
-        print(
-            f"[RIS] TOC-Request ({attempt}/{tries}) für Gesetzesnummer "
-            f"{gesetzesnummer} (Paragraf=0)..."
+        logger.info(
+            "[RIS] TOC-Request (%s/%s) für Gesetzesnummer %s (Paragraf=0)...",
+            attempt,
+            tries,
+            gesetzesnummer,
         )
         try:
-            r = requests.get(RIS_TOC_URL, params=params, headers=headers, timeout=timeout)
-        except requests.RequestException as e:
-            print(f"[RIS] Fehler beim TOC-Request (Versuch {attempt}): {e}")
-            last = None
-            # kleiner Backoff, bevor erneut versucht wird
-            time.sleep(1.5 * attempt)
-            continue
+            r = client.get(
+                RIS_TOC_URL,
+                headers=headers,
+                params=params,
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            last_text = r.text
+            text_len = len(r.text or "")
+            if r.status_code == 200 and text_len > 2000:
+                logger.info("[RIS] TOC erfolgreich geladen (Status=200, Länge=%s).", text_len)
+                return r.text
 
-        last = r
-        text_len = len(r.text or "")
-        if r.status_code == 200 and text_len > 2000:
-            print(f"[RIS] TOC erfolgreich geladen (Status=200, Länge={text_len}).")
-            return r.text
-
-        print(
-            f"[RIS] Unerwartete TOC-Antwort (Status={r.status_code}, Länge={text_len}) "
-            f"für Gesetzesnummer {gesetzesnummer} – neuer Versuch..."
-        )
+            logger.warning(
+                "[RIS] Unerwartete TOC-Antwort (Status=%s, Länge=%s) für Gesetzesnummer %s – neuer Versuch...",
+                r.status_code,
+                text_len,
+                gesetzesnummer,
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            logger.warning(
+                "[RIS] Fehler beim TOC-Request (Versuch %s): %s",
+                attempt,
+                exc,
+            )
         time.sleep(1.5 * attempt)
 
     # Nach allen Versuchen
-    if last is not None:
-        print(
-            f"[RIS] Letzter TOC-Versuch fehlgeschlagen "
-            f"(Status={last.status_code}, Länge={len(last.text or '')})."
+    if last_text is not None:
+        logger.warning(
+            "[RIS] Letzter TOC-Versuch fehlgeschlagen (Länge=%s).",
+            len(last_text or ""),
         )
-        # raise_for_status wirft eine aussagekräftige Exception
-        last.raise_for_status()
-        return last.text
+        if last_error:
+            raise last_error
+        return last_text
 
-    raise RuntimeError(f"Fehler beim Laden der TOC-Seite für Gesetzesnummer {gesetzesnummer}")
+    raise RuntimeError(
+        f"Fehler beim Laden der TOC-Seite für Gesetzesnummer {gesetzesnummer}"
+    )
 
 
 def parse_toc(html: str, include_aufgehoben: bool = True) -> Tuple[List[str], List[str]]:

@@ -7,7 +7,7 @@ class LawItem:
     gesetzesnummer: str
     paragraph_id: Optional[str]
     heading: Optional[str]
-    text: str
+    text: Optional[str]
     url: str
     source: str
     document_number: Optional[str]

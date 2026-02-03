@@ -1,6 +1,8 @@
 from typing import Iterator, Literal, Dict, List, Optional
-import re
 import json
+import logging
+import re
+import time
 import urllib.parse as _url
 from pathlib import Path
 
@@ -11,10 +13,14 @@ from .html_parser import (
     fetch_paragraph_text_via_html,
     extract_para_id,
 )
+from .http_client import HttpClient, get_default_http_client
+from .records import FullRecord
 from .writer import write_jsonl_from_docrefs
 from .full_export import build_complete_numeric
 
 Granularity = Literal["para", "nor"]
+
+logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------
@@ -50,6 +56,8 @@ def _build_docrefs_from_toc(
     gesetzesnummer: str,
     paragraphs: List[str],
     granularity: Granularity,
+    *,
+    client: HttpClient | None = None,
 ) -> List[Dict[str, str]]:
     """
     Baut eine Liste von Dokument-Referenzen (URL + evtl. NOR-ID) aus dem Inhaltsverzeichnis.
@@ -88,7 +96,7 @@ def _build_docrefs_from_toc(
             }
         )
         try:
-            nor_urls = resolve_nor_urls_from_toc_url(toc_url)
+            nor_urls = resolve_nor_urls_from_toc_url(toc_url, client=client)
         except Exception:
             nor_urls = [toc_url]
 
@@ -116,6 +124,7 @@ def iter_law(
     granularity: Granularity = "nor",
     include_aufgehoben: bool = True,
     delay: float = 1.0,
+    client: HttpClient | None = None,
 ) -> Iterator[LawItem]:
     """
     Iteriert über ein Gesetz und liefert LawItem-Objekte.
@@ -126,22 +135,26 @@ def iter_law(
     )
     paragraphs = toc["paragraphs"]
 
-    docrefs = _build_docrefs_from_toc(gesetzesnummer, paragraphs, granularity)
+    client = client or get_default_http_client()
+    docrefs = _build_docrefs_from_toc(gesetzesnummer, paragraphs, granularity, client=client)
     total = len(docrefs)
-    print(
-        f"[RIS] iter_law: {total} Dokument-Referenzen für {law_name} "
-        f"({gesetzesnummer}) gefunden (granularity={granularity})."
+    logger.info(
+        "[RIS] iter_law: %s Dokument-Referenzen für %s (%s) gefunden (granularity=%s).",
+        total,
+        law_name,
+        gesetzesnummer,
+        granularity,
     )
 
     for idx, ref in enumerate(docrefs, start=1):
-        parsed = fetch_paragraph_text_via_html(ref["url"])
+        parsed = fetch_paragraph_text_via_html(ref["url"], client=client)
         heading = (parsed.get("heading") or "").strip()
         text = (parsed.get("text") or "").strip()
         nor = (parsed.get("nor") or ref.get("id") or "").strip()
         para_id = extract_para_id(heading or text)
 
         if total and (idx == total or idx % 10 == 0):
-            print(f"  ║ Fortschritt (iter_law/NOR): {idx}/{total}")
+            logger.info("  ║ Fortschritt (iter_law/NOR): %s/%s", idx, total)
 
         yield LawItem(
             law=law_name,
@@ -155,6 +168,9 @@ def iter_law(
             retrieved_at="",
         )
 
+        if delay:
+            time.sleep(delay)
+
 
 # ------------------------------------------------------------
 # TOC-/NOR-Export in JSONL (CLI mode=toc)
@@ -167,6 +183,7 @@ def write_jsonl(
     granularity: Granularity = "nor",
     include_aufgehoben: bool = True,
     delay: float = 1.0,
+    client: HttpClient | None = None,
 ) -> int:
     """
     TOC/NOR-basierter Export in eine JSONL-Datei.
@@ -178,15 +195,23 @@ def write_jsonl(
     )
     paragraphs = toc["paragraphs"]
 
-    docrefs = _build_docrefs_from_toc(gesetzesnummer, paragraphs, granularity)
+    client = client or get_default_http_client()
+    docrefs = _build_docrefs_from_toc(gesetzesnummer, paragraphs, granularity, client=client)
     total = len(docrefs)
-    print(
-        f"[RIS] TOC/NOR-Export {law_name} ({gesetzesnummer}) – "
-        f"{total} Dokument-Referenzen gefunden (granularity={granularity})."
+    logger.info(
+        "[RIS] TOC/NOR-Export %s (%s) – %s Dokument-Referenzen gefunden (granularity=%s).",
+        law_name,
+        gesetzesnummer,
+        total,
+        granularity,
     )
 
     if total == 0:
-        print(f"[RIS] WARNUNG: Keine Dokumente für {law_name} ({gesetzesnummer}) gefunden.")
+        logger.warning(
+            "[RIS] WARNUNG: Keine Dokumente für %s (%s) gefunden.",
+            law_name,
+            gesetzesnummer,
+        )
         return 0
 
     return write_jsonl_from_docrefs(
@@ -195,6 +220,7 @@ def write_jsonl(
         delay=delay,
         gesetzesnummer=gesetzesnummer,
         law_name=law_name,
+        client=client,
     )
 
 
@@ -211,6 +237,7 @@ def write_jsonl_full(
     toc_date: str | None = None,
     start_num: int = 1,
     end_num: int | None = None,
+    client: HttpClient | None = None,
 ) -> int:
     """
     Vollständiger Export eines Gesetzes im „full“-Schema (wie build_complete_numeric).
@@ -226,6 +253,7 @@ def write_jsonl_full(
     """
     law_entry = _find_law_entry(gesetzesnummer)
     unit_type = "paragraf"
+    client = client or get_default_http_client()
 
     # --- 1) Mischgesetze: Artikel + Paragraphen ---
     if law_entry:
@@ -233,9 +261,9 @@ def write_jsonl_full(
         has_art = bool(law_entry.get("has_articles"))
 
         if has_par and has_art:
-            print(
-                f"[RIS] Mischgesetz erkannt ({gesetzesnummer}) – "
-                f"verwende NOR-Export mit full-Schema."
+            logger.info(
+                "[RIS] Mischgesetz erkannt (%s) – verwende NOR-Export mit full-Schema.",
+                gesetzesnummer,
             )
 
             # unit_type für das Schema (z.B. "artikel" beim DSG)
@@ -247,50 +275,64 @@ def write_jsonl_full(
                 include_aufgehoben=include_aufgehoben,
             )
             paragraphs = toc["paragraphs"]
-            docrefs = _build_docrefs_from_toc(gesetzesnummer, paragraphs, "nor")
+            docrefs = _build_docrefs_from_toc(
+                gesetzesnummer,
+                paragraphs,
+                "nor",
+                client=client,
+            )
             total = len(docrefs)
-            print(
-                f"[RIS] NOR-Dokumente für Mischgesetz {law_name} "
-                f"({gesetzesnummer}) – {total} gefunden."
+            logger.info(
+                "[RIS] NOR-Dokumente für Mischgesetz %s (%s) – %s gefunden.",
+                law_name,
+                gesetzesnummer,
+                total,
             )
 
             written = 0
             with open(out_path, "w", encoding="utf-8") as f:
                 for idx, ref in enumerate(docrefs, start=1):
-                    parsed = fetch_paragraph_text_via_html(ref["url"])
+                    parsed = fetch_paragraph_text_via_html(ref["url"], client=client)
                     heading = (parsed.get("heading") or "").strip()
                     text = (parsed.get("text") or "").strip()
                     nor = (parsed.get("nor") or ref.get("id") or "").strip()
                     para_id = extract_para_id(heading or text)
 
-                    row: Dict[str, object] = {
-                        "gesetzesnummer": gesetzesnummer,
-                        "law": law_name,
-                        "unit_type": unit_type_mixed,
+                    record = FullRecord(
+                        gesetzesnummer=gesetzesnummer,
+                        law=law_name,
+                        unit_type=unit_type_mixed,
                         # keine reine Nummer wie "1" → para_id/heading als Einheit
-                        "unit": para_id or heading or "",
-                        "unit_number": para_id or heading or "",
-                        "date_in_force": None,
-                        "date_out_of_force": None,
-                        "license": None,
-                        "status": "ok" if text else "resolve_failed",
-                        "text": text,
-                        "heading": heading,
-                        "nor": nor or None,
-                        "url": ref["url"],
-                    }
-                    f.write(json.dumps(row, ensure_ascii=False))
+                        unit=para_id or heading or "",
+                        unit_number=para_id or heading or "",
+                        date_in_force=None,
+                        date_out_of_force=None,
+                        license=None,
+                        status="ok" if text else "resolve_failed",
+                        text=text,
+                        heading=heading,
+                        nor=nor or None,
+                        url=ref["url"],
+                    )
+                    f.write(json.dumps(record.to_dict(), ensure_ascii=False))
                     f.write("\n")
                     written += 1
 
                     if total and (idx == total or idx % 10 == 0):
-                        print(
-                            f"  ║ Fortschritt (full/Mischgesetz): {idx}/{total}"
+                        logger.info(
+                            "  ║ Fortschritt (full/Mischgesetz): %s/%s",
+                            idx,
+                            total,
                         )
 
-            print(
-                f"[RIS] ✅ Mischgesetz-Export abgeschlossen: {written} Einträge "
-                f"für {law_name} in {out_path} gespeichert."
+                    if delay:
+                        time.sleep(delay)
+
+            logger.info(
+                "[RIS] ✅ Mischgesetz-Export abgeschlossen: %s Einträge für %s in %s gespeichert.",
+                written,
+                law_name,
+                out_path,
             )
             return written
 
@@ -306,7 +348,13 @@ def write_jsonl_full(
     if end_num is None:
         raise ValueError(f"Keine fallback_end für {gesetzesnummer} gefunden.")
 
-    print(f"[RIS] Starte Voll-Export {law_name} ({gesetzesnummer}) – {unit_type}, bis {end_num}")
+    logger.info(
+        "[RIS] Starte Voll-Export %s (%s) – %s, bis %s",
+        law_name,
+        gesetzesnummer,
+        unit_type,
+        end_num,
+    )
 
     return build_complete_numeric(
         out_path=out_path,
@@ -317,4 +365,5 @@ def write_jsonl_full(
         start_num=start_num,
         end_num=end_num,
         unit_type=unit_type,
+        client=client,
     )

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import time
 import json
+import logging
+import time
 from typing import Optional, Dict, Any
 from urllib.parse import urlencode
 
-import requests
-
 from .html_parser import fetch_paragraph_text_via_html
+from .http_client import HttpClient, get_default_http_client
+from .records import FullRecord
 from .soap_client import get_law_metadata, parse_dates_from_html  # zentrale Datumslogik hier!
 
 RIS_NORMDOK_BASE = "https://www.ris.bka.gv.at/NormDokument.wxe"
@@ -18,6 +19,8 @@ _HTML_HEADERS = {
 }
 
 license_note = "Datenquelle: RIS – https://www.ris.bka.gv.at/, Lizenz: CC BY 4.0"
+
+logger = logging.getLogger(__name__)
 
 
 def _unit_url(gesetzesnummer: str, unit_type: str, nr_or_label: int | str) -> str:
@@ -32,13 +35,19 @@ def _unit_url(gesetzesnummer: str, unit_type: str, nr_or_label: int | str) -> st
     return f"{RIS_NORMDOK_BASE}?{urlencode(q)}"
 
 
-def _fetch_unit_html(gesetzesnummer: str, unit_type: str, nr_or_label: int | str) -> Optional[str]:
+def _fetch_unit_html(
+    gesetzesnummer: str,
+    unit_type: str,
+    nr_or_label: int | str,
+    *,
+    client: HttpClient,
+) -> Optional[str]:
     url = _unit_url(gesetzesnummer, unit_type, nr_or_label)
     try:
-        r = requests.get(url, headers=_HTML_HEADERS, timeout=30)
-        if r.status_code == 200 and "<html" in r.text.lower():
+        r = client.get(url, headers=_HTML_HEADERS, timeout=30, min_content_length=100)
+        if "<html" in r.text.lower():
             return r.text
-    except requests.RequestException:
+    except Exception:  # noqa: BLE001
         pass
     return None
 
@@ -54,13 +63,21 @@ def export_full_jsonl(
     delay: float = 1.0,
     include_aufgehoben: bool = False,
     laws_json_path: Optional[str] = None,   # nur Signatur-Kompatibilität
+    client: HttpClient | None = None,
 ) -> int:
     """
     Voll-Export (start_num..end_num).
     Pro Basisnummer wird zusätzlich eine Suffix-Schleife (a..z) probiert und
     beim ersten Loch beendet (typische RIS-Struktur: zusammenhängende Kette).
     """
-    print(f"[RIS] Starte Voll-Export {law_name} ({gesetzesnummer}) – {unit_type}, bis {end_num}")
+    client = client or get_default_http_client()
+    logger.info(
+        "[RIS] Starte Voll-Export %s (%s) – %s, bis %s",
+        law_name,
+        gesetzesnummer,
+        unit_type,
+        end_num,
+    )
 
     # Fallback-Metadaten vom Gesetz (Art.0/§0)
     law_meta = get_law_metadata(gesetzesnummer) or {}
@@ -76,15 +93,15 @@ def export_full_jsonl(
         unit_url = _unit_url(gesetzesnummer, unit_type, nr_or_label)
 
         # 1) HTML (Existenz + Metadaten)
-        html = _fetch_unit_html(gesetzesnummer, unit_type, nr_or_label)
+        html = _fetch_unit_html(gesetzesnummer, unit_type, nr_or_label, client=client)
         if not html:
             return False
 
         # 2) Text der Einheit (dein bestehender Parser)
         parsed: Dict[str, Any] = {}
         try:
-            parsed = fetch_paragraph_text_via_html(unit_url) or {}
-        except Exception:
+            parsed = fetch_paragraph_text_via_html(unit_url, client=client) or {}
+        except Exception:  # noqa: BLE001
             parsed = {}
 
         text = (parsed.get("text") or "").strip()
@@ -97,23 +114,23 @@ def export_full_jsonl(
         date_out = u_meta.get("date_out_of_force") or law_date_out
         date_pub = u_meta.get("kundmachungsdatum") or law_pub
 
-        row: Dict[str, Any] = {
-            "gesetzesnummer": gesetzesnummer,
-            "law": law_name,
-            "unit_type": unit_type,
-            "unit": f"{'Art.' if unit_type.lower().startswith('art') else '§'} {nr_or_label}",
-            "unit_number": str(nr_or_label),
-            "date_in_force": date_in,
-            "date_out_of_force": date_out,
-            "license": license_note,
-            "status": "ok" if text else "resolve_failed",
-            "text": text,
-            "heading": heading,
-            "nor": nor,
-            "url": unit_url,
-        }
+        record = FullRecord(
+            gesetzesnummer=gesetzesnummer,
+            law=law_name,
+            unit_type=unit_type,
+            unit=f"{'Art.' if unit_type.lower().startswith('art') else '§'} {nr_or_label}",
+            unit_number=str(nr_or_label),
+            date_in_force=date_in,
+            date_out_of_force=date_out,
+            license=license_note,
+            status="ok" if text else "resolve_failed",
+            text=text,
+            heading=heading,
+            nor=nor,
+            url=unit_url,
+        )
 
-        f.write(json.dumps(row, ensure_ascii=False))
+        f.write(json.dumps(record.to_dict(), ensure_ascii=False))
         f.write("\n")
         return True
 
@@ -136,9 +153,9 @@ def export_full_jsonl(
             if delay:
                 time.sleep(delay)
             if nr % 50 == 0 or nr == end_num:
-                print(f"  ║ Fortschritt: {nr}/{end_num}")
+                logger.info("  ║ Fortschritt: %s/%s", nr, end_num)
 
-    print(f"[RIS] ✅ Fertig: {written} Einträge gespeichert ({law_name})")
+    logger.info("[RIS] ✅ Fertig: %s Einträge gespeichert (%s)", written, law_name)
     return written
 
 
@@ -155,6 +172,7 @@ def build_complete_numeric(
     delay: float = 1.0,
     include_aufgehoben: bool = False,
     laws_json_path: Optional[str] = None,
+    client: HttpClient | None = None,
 ) -> int:
     return export_full_jsonl(
         gesetzesnummer=gesetzesnummer,
@@ -166,4 +184,5 @@ def build_complete_numeric(
         delay=delay,
         include_aufgehoben=include_aufgehoben,
         laws_json_path=laws_json_path,
+        client=client,
     )

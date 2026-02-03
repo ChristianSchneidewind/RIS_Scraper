@@ -1,27 +1,15 @@
 # ris_abgb/html_parser.py
 import re
-import time
-import requests
 from bs4 import BeautifulSoup
-from .config import USER_AGENT
+
+from .http_client import HttpClient
 
 _RX_NOR = re.compile(r"\b(NOR\d{5,})\b", re.IGNORECASE)
 _RX_NOR_LINK = re.compile(r"/Dokumente/[^/]+/(NOR\d{5,})/(?:\1)\.html", re.IGNORECASE)
 
-def _get_with_retry(url: str, tries: int = 3, timeout: int = 120):
-    last = None
-    for i in range(tries):
-        try:
-            r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=timeout, allow_redirects=True)
-            r.raise_for_status()
-            if r.text and len(r.text) > 500:  # primitive Qualitätsprüfung
-                return r
-        except Exception as e:
-            last = e
-        time.sleep(1.5 * (i + 1))
-    if last:
-        raise last
-    raise RuntimeError("Unbekannter Fehler beim Abrufen")
+def _get_with_retry(url: str, tries: int = 3, timeout: int = 120, client: HttpClient | None = None):
+    client = client or HttpClient(retries=tries)
+    return client.get(url, timeout=timeout, allow_redirects=True, min_content_length=500)
 
 def _strip_obvious_nav(soup: BeautifulSoup):
     # Navigations-/Meta-Bereiche entfernen, wenn vorhanden
@@ -43,13 +31,13 @@ def _extract_nors_from_html(html: str) -> list[str]:
         nors.add(m.group(1))
     return sorted(nors)
 
-def resolve_nor_urls_from_toc_url(toc_url: str) -> list[str]:
+def resolve_nor_urls_from_toc_url(toc_url: str, *, client: HttpClient | None = None) -> list[str]:
     """
     Nimmt eine §-Seiten-URL (NormDokument.wxe?...&Paragraf=...) und liefert
     alle dazugehörigen *kanonischen* NOR-HTML-URLs.
     Falls nichts gefunden wird, wird die Eingabe-URL als Fallback zurückgegeben.
     """
-    r = _get_with_retry(toc_url)
+    r = _get_with_retry(toc_url, client=client)
     html = r.text
     nors = _extract_nors_from_html(html)
     if not nors:
@@ -62,14 +50,14 @@ def resolve_nor_urls_from_toc_url(toc_url: str) -> list[str]:
     base = "https://www.ris.bka.gv.at/Dokumente/Bundesnormen"
     return [f"{base}/{nor}/{nor}.html" for nor in nors]
 
-def fetch_paragraph_text_via_html(url: str) -> dict:
+def fetch_paragraph_text_via_html(url: str, *, client: HttpClient | None = None) -> dict:
     """
     Lädt eine (NOR- oder §-)HTML-Seite und extrahiert Überschrift, Text und NOR.
     """
     if not url:
         return {"heading": "", "text": "", "nor": ""}
 
-    r = _get_with_retry(url)
+    r = _get_with_retry(url, client=client)
     html = r.text
     soup = BeautifulSoup(html, "html.parser")
     _strip_obvious_nav(soup)
